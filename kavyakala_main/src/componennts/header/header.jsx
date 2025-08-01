@@ -1,15 +1,15 @@
 import './header.css';
-import logo from '../../assets/logo.png'; // Update as needed
+import logo from '../../assets/logo2.png'; // Update as needed
 import { FaMoon, FaSun } from 'react-icons/fa';
 export function Header({ theme, toggleTheme }) {
   return (
-    <header className="custom-header shadow-sm">
+    <header className="custom-header shadow-sm w-100">
       <div className="container d-flex justify-content-between align-items-center py-2">
 
         {/* LEFT: Logo & Navigation */}
         <div className="d-flex align-items-center gap-4">
           <div className="d-flex align-items-center gap-2">
-            <img src={logo} width={50} height={55} alt="logo" className="logo-img" />
+            <img src={logo} width={40} height={55} alt="logo" className="logo-img" />
             <h4 className="m-0 fw-bold ">काव्यकला</h4>
           </div>
           <div className="d-flex align-items-center gap-3 ms-4">
@@ -36,7 +36,7 @@ export function Header({ theme, toggleTheme }) {
           </div>
 
           {/* Login */}
-          <div className="login-text">लॉग-इन</div>
+          <button data-bs-toggle='modal' data-bs-target="#modallogin" className="login-text btn">लॉग-इन</button>
 
           {/* Social Icons */}
           <div className="d-flex align-items-center gap-3 fs-5 social-icons">
@@ -48,6 +48,31 @@ export function Header({ theme, toggleTheme }) {
            <button className="btn btn-outline-secondary" onClick={toggleTheme}>
             {theme === 'light' ? <FaMoon /> : <FaSun />}
           </button>
+        </div>
+      </div>
+      <div className=' modal' id='modallogin' style={{height:'100vh'}}>
+        <div className='modal-dialog modal-dialog-centered'>
+          <div className='modal-content '>
+            <div className='modal-header'>
+              <h3 className='text-orange'>काव्यकला में लॉगिन करें</h3>
+              <button className='btn-close ' data-bs-dismiss="modal" ></button>
+            </div>
+            <div className='modal-body'>
+              <form className='form-horizontal'>
+                <div>
+                  <div className='form-group my-'>
+                    <label className='control-label' htmlFor="email" >Email</label>
+                    <input className='form-control' type="email" name="email" placeholder='Enter your email-id' ></input>
+                  </div>
+                  <div className='my-2'>
+                    <label className='control-label' htmlFor='password'>Password</label>
+                    <input className='form-control' type="password" name="password" placeholder='Enter yourr password' ></input>
+                  </div>
+                </div>
+                <button className='btn btn-orange my-3 w-100' type="submit" >लॉगिन</button>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
     </header>

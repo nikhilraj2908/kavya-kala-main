@@ -3,6 +3,7 @@ import {BrowserRouter,Route,Routes} from 'react-router-dom';
 import Home from './pages/home/home';
 import '../node_modules/bootstrap/dist/css/bootstrap.css'
 import '../node_modules/bootstrap-icons/font/bootstrap-icons.css';
+import '../node_modules/bootstrap/dist/js/bootstrap.bundle.js';
 import { useEffect } from 'react';
 import { useState } from 'react';
 import './App.css'
