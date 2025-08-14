@@ -1,12 +1,20 @@
-const express = require('express');
-const router = express.Router();
-const writingController = require('../controllers/writingController');
+const router = require('express').Router();
+const ctrl = require('../controllers/writingController');
+const { requireAuth, requireRole } = require('../middleware/auth');
 
-router.post('/add', writingController.createWriting);
-router.get('/all', writingController.getAllWritings);
-router.get('/poet/:poetId', writingController.getWritingsByPoet);
-router.get('/:id', writingController.getWritingById);
-router.put('/:id', writingController.updateWriting);
-router.delete('/:id', writingController.deleteWriting);
+// Public
+router.get('/', ctrl.list);
+router.get('/featured', ctrl.featured);
+router.get('/:id', ctrl.getOne);
+router.get('/:id/comments', ctrl.listComments);
+
+// Auth
+router.post('/', requireAuth, ctrl.create);
+router.post('/:id/like', requireAuth, ctrl.like);
+router.post('/:id/unlike', requireAuth, ctrl.unlike);
+router.post('/:id/comments', requireAuth, ctrl.addComment);
+
+// Admin
+router.post('/:id/toggle-featured', requireAuth, requireRole('admin'), ctrl.toggleFeatured);
 
 module.exports = router;

@@ -1,56 +1,103 @@
-const Poet = require("../models/Poet");
+const Poet = require('../models/Poet');
+const User = require('../models/User');
 
-// Create a new poet
-exports.createPoet = async (req, res) => {
-    try {
-        const { name, bio, birthDate } = req.body;
-        const newPoet = new Poet({ name, bio, birthDate });
-        await newPoet.save();
-        res.status(201).json({ message: "Poet created successfully", poet: newPoet });
-    } catch (error) {
-        res.status(500).json({ error: "Failed to create poet", details: error.message });
-    }
+// GET /api/poets?q=&language=&era=&featured=
+exports.list = async (req, res) => {
+  const { q, language, era, featured } = req.query;
+  const filter = {};
+  if (q) filter.$or = [
+    { name: { $regex: q, $options: 'i' } },
+    { aka: { $regex: q, $options: 'i' } },
+    { bioShort: { $regex: q, $options: 'i' } },
+  ];
+  if (language && language !== 'all') filter.languages = language;
+  if (era && era !== 'all') filter.era = { $regex: era, $options: 'i' };
+  if (featured !== undefined) filter.featured = featured === 'true';
+
+  const poets = await Poet.find(filter).sort({ featured: -1, name: 1 }).lean();
+  res.json(poets.map(p => ({ id: p._id, ...p })));
 };
 
-// Get all poets
-exports.getAllPoets = async (req, res) => {
-    try {
-        const poets = await Poet.find();
-        res.status(200).json(poets);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch poets" });
-    }
+// GET /api/poets/featured
+exports.featured = async (_req, res) => {
+  const poets = await Poet.find({ featured: true }).sort({ name: 1 }).lean();
+  res.json(poets.map(p => ({ id: p._id, ...p })));
 };
 
-// Get single poet by ID
-exports.getPoetById = async (req, res) => {
-    try {
-        const poet = await Poet.findById(req.params.id);
-        if (!poet) return res.status(404).json({ error: "Poet not found" });
-        res.status(200).json(poet);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch poet" });
-    }
+// GET /api/poets/:id
+exports.getOne = async (req, res) => {
+  const p = await Poet.findById(req.params.id).lean();
+  if (!p) return res.status(404).json({ message: 'Poet not found' });
+  res.json({ id: p._id, ...p });
 };
 
-// Update poet
-exports.updatePoet = async (req, res) => {
-    try {
-        const updatedPoet = await Poet.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        if (!updatedPoet) return res.status(404).json({ error: "Poet not found" });
-        res.status(200).json({ message: "Poet updated", poet: updatedPoet });
-    } catch (error) {
-        res.status(500).json({ error: "Failed to update poet" });
-    }
+// POST /api/poets (admin)
+exports.create = async (req, res) => {
+  const poet = await Poet.create(req.body);
+  res.status(201).json({ id: poet._id, ...poet.toObject() });
 };
 
-// Delete poet
-exports.deletePoet = async (req, res) => {
-    try {
-        const deletedPoet = await Poet.findByIdAndDelete(req.params.id);
-        if (!deletedPoet) return res.status(404).json({ error: "Poet not found" });
-        res.status(200).json({ message: "Poet deleted" });
-    } catch (error) {
-        res.status(500).json({ error: "Failed to delete poet" });
-    }
+// PATCH /api/poets/:id (admin)
+exports.update = async (req, res) => {
+  const poet = await Poet.findByIdAndUpdate(req.params.id, req.body, { new: true }).lean();
+  if (!poet) return res.status(404).json({ message: 'Poet not found' });
+  res.json({ id: poet._id, ...poet });
+};
+
+// DELETE /api/poets/:id (admin)
+exports.remove = async (req, res) => {
+  const r = await Poet.findByIdAndDelete(req.params.id).lean();
+  if (!r) return res.status(404).json({ message: 'Poet not found' });
+  res.json({ deleted: true });
+};
+
+// POST /api/poets/:id/toggle-featured (admin)
+exports.toggleFeatured = async (req, res) => {
+  const poet = await Poet.findById(req.params.id);
+  if (!poet) return res.status(404).json({ message: 'Poet not found' });
+  poet.featured = !poet.featured;
+  await poet.save();
+  res.json(poet.featured);
+};
+
+// POST /api/poets/:id/follow (auth)
+exports.follow = async (req, res) => {
+  const poetId = req.params.id;
+  const userId = req.user.id;
+
+  const poet = await Poet.findById(poetId);
+  if (!poet) return res.status(404).json({ message: 'Poet not found' });
+
+  const user = await User.findById(userId);
+  if (!user) return res.status(401).json({ message: 'Unauthorized' });
+
+  if (!user.followingPoets.some(id => id.equals(poet._id))) {
+    user.followingPoets.push(poet._id);
+    poet.followersCount += 1;
+    await user.save();
+    await poet.save();
+  }
+  res.json({ following: true, followersCount: poet.followersCount });
+};
+
+// POST /api/poets/:id/unfollow (auth)
+exports.unfollow = async (req, res) => {
+  const poetId = req.params.id;
+  const userId = req.user.id;
+
+  const poet = await Poet.findById(poetId);
+  if (!poet) return res.status(404).json({ message: 'Poet not found' });
+
+  const user = await User.findById(userId);
+  if (!user) return res.status(401).json({ message: 'Unauthorized' });
+
+  const before = user.followingPoets.length;
+  user.followingPoets = user.followingPoets.filter(id => !id.equals(poet._id));
+  if (user.followingPoets.length !== before && poet.followersCount > 0) {
+    poet.followersCount -= 1;
+  }
+  await user.save();
+  await poet.save();
+
+  res.json({ following: false, followersCount: poet.followersCount });
 };

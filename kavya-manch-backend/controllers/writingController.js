@@ -1,72 +1,119 @@
-const Writing = require("../models/Writing");
-const Poet = require("../models/Poet");
+const Writing = require('../models/Writing');
 
-// Create a new writing
-exports.createWriting = async (req, res) => {
-    try {
-        const { title, content, category, poetId } = req.body;
+// GET /api/writings?q=&poetId=&categories=...,..&language=&featured=&sortBy=
+exports.list = async (req, res) => {
+  const { q, poetId, categories, language, featured, sortBy } = req.query;
+  const filter = { visibility: 'public' };
 
-        const poet = await Poet.findById(poetId);
-        if (!poet) return res.status(404).json({ error: "Poet not found" });
+  if (poetId) filter.poetId = poetId;
+  if (language && language !== 'all') filter.language = language;
+  if (featured !== undefined) filter.featured = featured === 'true';
 
-        const newWriting = new Writing({ title, content, category, poet: poetId });
-        await newWriting.save();
+  if (q) filter.$or = [
+    { title: { $regex: q, $options: 'i' } },
+    { body: { $regex: q, $options: 'i' } }
+  ];
 
-        res.status(201).json({ message: "Writing created", writing: newWriting });
-    } catch (error) {
-        res.status(500).json({ error: "Failed to create writing", details: error.message });
-    }
+  if (categories) {
+    const arr = String(categories).split(',').map(s => s.trim()).filter(Boolean);
+    if (arr.length) filter.categories = { $in: arr };
+  }
+
+  let query = Writing.find(filter);
+  if (sortBy === 'mostLiked') query = query.sort({ likes: -1, createdAt: -1 });
+  else query = query.sort({ createdAt: -1 });
+
+  const list = await query.lean();
+  res.json(list.map(p => ({ id: p._id, ...p })));
 };
 
-// Get all writings
-exports.getAllWritings = async (req, res) => {
-    try {
-        const writings = await Writing.find().populate("poet");
-        res.status(200).json(writings);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch writings" });
-    }
+// GET /api/writings/featured
+exports.featured = async (_req, res) => {
+  const items = await Writing.find({ featured: true, visibility: 'public' })
+    .sort({ createdAt: -1 }).lean();
+  res.json(items.map(p => ({ id: p._id, ...p })));
 };
 
-// Get writings by poet ID
-exports.getWritingsByPoet = async (req, res) => {
-    try {
-        const writings = await Writing.find({ poet: req.params.poetId }).populate("poet");
-        res.status(200).json(writings);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch writings" });
-    }
+// GET /api/writings/:id
+exports.getOne = async (req, res) => {
+  const p = await Writing.findById(req.params.id).lean();
+  if (!p) return res.status(404).json({ message: 'Writing not found' });
+  res.json({ id: p._id, ...p });
 };
 
-// Get writing by ID
-exports.getWritingById = async (req, res) => {
-    try {
-        const writing = await Writing.findById(req.params.id).populate("poet");
-        if (!writing) return res.status(404).json({ error: "Writing not found" });
-        res.status(200).json(writing);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch writing" });
-    }
+// POST /api/writings  (auth) — user creates a poem
+exports.create = async (req, res) => {
+  const { title, body, language, categories, poetId, visibility } = req.body;
+  if (!title || !body) return res.status(400).json({ message: 'Title and body are required' });
+
+  const doc = await Writing.create({
+    title, body,
+    language: language || 'hi',
+    categories: categories || [],
+    poetId: poetId || undefined,           // can be empty for user-generated
+    authorId: req.user.id,
+    visibility: visibility || 'public',
+  });
+  res.status(201).json({ id: doc._id, ...doc.toObject() });
 };
 
-// Update writing
-exports.updateWriting = async (req, res) => {
-    try {
-        const updatedWriting = await Writing.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        if (!updatedWriting) return res.status(404).json({ error: "Writing not found" });
-        res.status(200).json({ message: "Writing updated", writing: updatedWriting });
-    } catch (error) {
-        res.status(500).json({ error: "Failed to update writing" });
-    }
+// POST /api/writings/:id/like  (auth)
+exports.like = async (req, res) => {
+  const w = await Writing.findById(req.params.id);
+  if (!w) return res.status(404).json({ message: 'Writing not found' });
+
+  const uid = req.user.id;
+  if (!w.likedBy.some(id => id.equals(uid))) {
+    w.likedBy.push(uid);
+    w.likes = w.likedBy.length;
+    await w.save();
+  }
+  res.json({ likes: w.likes });
 };
 
-// Delete writing
-exports.deleteWriting = async (req, res) => {
-    try {
-        const deletedWriting = await Writing.findByIdAndDelete(req.params.id);
-        if (!deletedWriting) return res.status(404).json({ error: "Writing not found" });
-        res.status(200).json({ message: "Writing deleted" });
-    } catch (error) {
-        res.status(500).json({ error: "Failed to delete writing" });
-    }
+// POST /api/writings/:id/unlike  (auth)
+exports.unlike = async (req, res) => {
+  const w = await Writing.findById(req.params.id);
+  if (!w) return res.status(404).json({ message: 'Writing not found' });
+
+  const uid = req.user.id;
+  const before = w.likedBy.length;
+  w.likedBy = w.likedBy.filter(id => !id.equals(uid));
+  if (w.likedBy.length !== before) {
+    w.likes = w.likedBy.length;
+    await w.save();
+  }
+  res.json({ likes: w.likes });
+};
+
+// GET /api/writings/:id/comments
+exports.listComments = async (req, res) => {
+  const w = await Writing.findById(req.params.id).lean();
+  if (!w) return res.status(404).json({ message: 'Writing not found' });
+  res.json((w.comments || []).map(c => ({ id: c._id, ...c })));
+};
+
+// POST /api/writings/:id/comments  (auth)
+exports.addComment = async (req, res) => {
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ message: 'Content required' });
+
+  const w = await Writing.findById(req.params.id);
+  if (!w) return res.status(404).json({ message: 'Writing not found' });
+
+  const c = { userId: req.user.id, userName: req.user.handle || 'User', content: content.trim() };
+  w.comments.push(c);
+  await w.save();
+
+  const saved = w.comments[w.comments.length - 1];
+  res.status(201).json({ id: saved._id, ...saved.toObject() });
+};
+
+// POST /api/writings/:id/toggle-featured (admin)
+exports.toggleFeatured = async (req, res) => {
+  const w = await Writing.findById(req.params.id);
+  if (!w) return res.status(404).json({ message: 'Writing not found' });
+  w.featured = !w.featured;
+  await w.save();
+  res.json(w.featured);
 };
