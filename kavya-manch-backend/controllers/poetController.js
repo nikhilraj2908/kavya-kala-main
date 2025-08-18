@@ -32,16 +32,47 @@ exports.getOne = async (req, res) => {
 };
 
 // POST /api/poets (admin)
+// create()
 exports.create = async (req, res) => {
-  const poet = await Poet.create(req.body);
-  res.status(201).json({ id: poet._id, ...poet.toObject() });
+  try {
+    const body = req.body || {};
+    let languages = body.languages;
+    if (typeof languages === 'string') {
+      languages = languages.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    const poet = await Poet.create({
+      name: body.name,
+      aka: body.aka,                // 👈 accept aka
+      era: body.era,
+      avatarUrl: body.avatarUrl,
+      bioShort: body.bioShort,
+      bio: body.bio,
+      languages: languages?.length ? languages : ['hi'],
+      featured: !!body.featured
+    });
+    res.status(201).json(poet);
+  } catch (err) {
+    res.status(400).json({ message: err.message || 'Failed to create poet' });
+  }
 };
 
 // PATCH /api/poets/:id (admin)
 exports.update = async (req, res) => {
-  const poet = await Poet.findByIdAndUpdate(req.params.id, req.body, { new: true }).lean();
-  if (!poet) return res.status(404).json({ message: 'Poet not found' });
-  res.json({ id: poet._id, ...poet });
+  try {
+    const body = req.body || {};
+    if (typeof body.languages === 'string') {
+      body.languages = body.languages.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    const poet = await Poet.findByIdAndUpdate(
+      req.params.id,
+      { $set: body },                // 👈 will include aka when sent
+      { new: true, runValidators: true }
+    );
+    if (!poet) return res.status(404).json({ message: 'Poet not found' });
+    res.json(poet);
+  } catch (err) {
+    res.status(400).json({ message: err.message || 'Failed to update poet' });
+  }
 };
 
 // DELETE /api/poets/:id (admin)
